@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-10-05T09:23:07.133Z",
+  "status": "READY_FOR_REVIEW",
+  "source": "packages/config/src/index.ts",
+  "metadata": {
+    "title": "DECEIT — Think. Bluff. Deceive. Survive.",
+    "description": "Production-ready real-time multiplayer secret-word imposter party game",
+    "descriptionLength": 70,
+    "keywords": [
+      "multiplayer",
+      "social deduction",
+      "secret word",
+      "party game",
+      "imposter",
+      "online game"
+    ],
+    "canonicalUrl": "https://deceit.game/"
+  },
+  "structuredData": {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "DECEIT",
+    "description": "Production-ready real-time multiplayer secret-word imposter party game",
+    "url": "https://deceit.game/",
+    "applicationCategory": "GameApplication",
+    "operatingSystem": "Web browser",
+    "keywords": "multiplayer, social deduction, secret word, party game, imposter, online game"
+  },
+  "validation": {
+    "errors": []
+  }
+}
