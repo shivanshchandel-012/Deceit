@@ -1,0 +1,28 @@
+{
+  "name": "DECEIT",
+  "short_name": "DECEIT",
+  "description": "Real-time multiplayer secret-word imposter party game. Think. Bluff. Deceive. Survive.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#070708",
+  "theme_color": "#070708",
+  "categories": ["games", "entertainment"],
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Pass & Play",
+      "url": "/?mode=local",
+      "description": "Play locally with friends"
+    }
+  ]
+}
