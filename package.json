@@ -13,7 +13,9 @@
     "dev:web": "npm run dev --workspace=@deceit/web",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
-    "lint": "npm run lint --workspaces"
+    "lint": "npm run lint --workspaces",
+    "seo:generate": "tsx generate-seo.ts",
+    "daily:commit": "python daily_commit.py"
   },
   "keywords": [
     "social-deduction",
