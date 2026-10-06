@@ -12,6 +12,7 @@
     "@deceit/config": "*",
     "@deceit/game-engine": "*",
     "@deceit/game-types": "*",
+    "@vercel/analytics": "^2.0.1",
     "clsx": "^2.1.1",
     "framer-motion": "^11.2.10",
     "lucide-react": "^0.379.0",
