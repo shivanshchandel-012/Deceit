@@ -9,6 +9,10 @@ export const APP_CONFIG = {
   tagline: 'Think. Bluff. Deceive. Survive.',
   version: '0.1.0',
   description: 'Production-ready real-time multiplayer secret-word imposter party game',
+  seo: {
+    title: 'DECEIT — Think. Bluff. Deceive. Survive.',
+    keywords: ['multiplayer', 'social deduction', 'secret word', 'party game', 'imposter', 'online game'],
+  },
   poweredBy: 'Powered by Ares',
   author: 'DECEIT Engineering Team',
   homepage: 'https://deceit.game',
