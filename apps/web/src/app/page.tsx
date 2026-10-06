@@ -1,828 +1,255 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { getSocket } from '@/lib/socket';
-import { ClientGameState, GameSettings } from '@deceit/game-types';
-import { APP_CONFIG } from '@deceit/config';
-import { 
-  Users, 
-  Play, 
-  PlusCircle, 
-  LogIn, 
-  Sparkles, 
-  ShieldAlert, 
-  Bot, 
-  MessageSquare, 
-  X, 
-  Send, 
-  RotateCcw,
-  Eye,
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  ArrowRight,
+  Bot,
+  Check,
+  Copy,
   Crown,
-  BookOpen,
-  Settings as SettingsIcon,
-  Skull,
-  HelpCircle,
-  Layers,
+  Eye,
+  Gamepad2,
+  LogIn,
+  MessageCircle,
+  Plus,
+  RefreshCw,
+  Send,
+  ShieldAlert,
   Smartphone,
-  CheckCircle2,
-  Lock,
-  ChevronRight
+  Sparkles,
+  Users,
+  Wifi,
+  WifiOff,
+  X,
+  Zap,
 } from 'lucide-react';
+import { ClientGameState } from '@deceit/game-types';
+import { APP_CONFIG } from '@deceit/config';
+import { getSocket, getSocketUrl } from '@/lib/socket';
+
+const tabs = [
+  { id: 'ONLINE', label: 'Online', icon: Wifi },
+  { id: 'LOCAL', label: 'Pass & Play', icon: Smartphone },
+  { id: 'RULES', label: 'How to play', icon: Sparkles },
+] as const;
+type Tab = (typeof tabs)[number]['id'];
+
+type LocalPlayer = { id: number; name: string };
+const LOCAL_WORDS = [
+  { word: 'INTERSTELLAR', category: 'Movies' },
+  { word: 'ALGORITHM', category: 'Technology' },
+  { word: 'PIZZA', category: 'Food' },
+  { word: 'GUITAR', category: 'Music' },
+  { word: 'VOLCANO', category: 'Nature' },
+  { word: 'CHESS', category: 'Games' },
+  { word: 'LIGHTHOUSE', category: 'Places' },
+  { word: 'TELESCOPE', category: 'Science' },
+  { word: 'SUBMARINE', category: 'Vehicles' },
+];
 
 export default function GamePage() {
+  const [tab, setTab] = useState<Tab>('ONLINE');
   const [username, setUsername] = useState('');
-  const [roomCodeInput, setRoomCodeInput] = useState('');
-  const [gameState, setGameState] = useState<ClientGameState | null>(null);
-  const [clueInput, setClueInput] = useState('');
-  const [imposterGuessInput, setImposterGuessInput] = useState('');
-  const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<Array<{ id: string; senderName: string; text: string; channel: string }>>([]);
-  const [activeTab, setActiveTab] = useState<'PLAY' | 'PRESETS' | 'WORD_PACKS' | 'RULES' | 'LOCAL'>('PLAY');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [selectedVoteId, setSelectedVoteId] = useState<string | 'SKIP' | null>(null);
+  const [roomCode, setRoomCode] = useState('');
+  const [game, setGame] = useState<ClientGameState | null>(null);
+  const [error, setError] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [clue, setClue] = useState('');
+  const [guess, setGuess] = useState('');
+  const [chat, setChat] = useState('');
+  const [messages, setMessages] = useState<Array<{ id: string; senderName: string; text: string }>>([]);
+  const [vote, setVote] = useState<string | null>(null);
 
-  // Local Pass & Play State
-  const [localPlayers, setLocalPlayers] = useState<string[]>(['Alice', 'Bob', 'Charlie', 'David']);
-  const [newPlayerName, setNewPlayerName] = useState('');
-  const [localGameRunning, setLocalGameRunning] = useState(false);
-  const [localCurrentPlayerIndex, setLocalCurrentPlayerIndex] = useState(0);
-  const [localCardRevealed, setLocalCardRevealed] = useState(false);
-  const [localImposterIndex, setLocalImposterIndex] = useState<number>(0);
-  const [localWord, setLocalWord] = useState({ word: 'INTERSTELLAR', category: 'Movies', hint: 'Space time dilation' });
+  const [localPlayers, setLocalPlayers] = useState<LocalPlayer[]>([
+    { id: 1, name: 'Alex' },
+    { id: 2, name: 'Sam' },
+    { id: 3, name: 'Jordan' },
+    { id: 4, name: 'Taylor' },
+  ]);
+  const [localName, setLocalName] = useState('');
+  const [localRunning, setLocalRunning] = useState(false);
+  const [localTurn, setLocalTurn] = useState(0);
+  const [localRevealed, setLocalRevealed] = useState(false);
+  const [localImposter, setLocalImposter] = useState(0);
+  const [localWord, setLocalWord] = useState(LOCAL_WORDS[0]);
 
-  // Custom Settings State for Room Creation
-  const [settingsImposters, setSettingsImposters] = useState(1);
-  const [settingsHintMode, setSettingsHintMode] = useState<'NONE' | 'CATEGORY' | 'CATEGORY_AND_HINT'>('CATEGORY');
-  const [settingsPack, setSettingsPack] = useState('pack-movies-cinema');
-  const [settingsClueOrder, setSettingsClueOrder] = useState<'SEQUENTIAL' | 'RANDOM' | 'ROTATING'>('SEQUENTIAL');
+  const socketReady = Boolean(getSocketUrl());
 
   useEffect(() => {
+    if (!socketReady) return;
     const socket = getSocket();
-
-    socket.on('game:state', (state: ClientGameState) => {
-      setGameState(state);
-      setErrorMsg(null);
-    });
-
-    socket.on('chat:message', (msg) => {
-      setChatMessages((prev) => [...prev.slice(-40), msg]);
-    });
-
-    socket.on('room:error', (err) => {
-      setErrorMsg(err.message);
-    });
-
-    return () => {
-      socket.off('game:state');
-      socket.off('chat:message');
-      socket.off('room:error');
+    const onConnect = () => { setConnected(true); setError(''); };
+    const onDisconnect = () => setConnected(false);
+    const onState = (state: ClientGameState) => { setGame(state); setError(''); };
+    const onError = (e: { message: string }) => setError(e.message);
+    const onChat = (m: { id: string; senderName: string; text: string }) => {
+      setMessages((prev) => [...prev.slice(-49), m]);
     };
-  }, []);
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    socket.on('game:state', onState);
+    socket.on('room:error', onError);
+    socket.on('chat:message', onChat);
+    if (socket.connected) setConnected(true);
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('game:state', onState);
+      socket.off('room:error', onError);
+      socket.off('chat:message', onChat);
+    };
+  }, [socketReady]);
 
-  const handleCreateRoom = () => {
-    if (!username.trim()) {
-      setErrorMsg('Please enter your name');
-      return;
-    }
-    const socket = getSocket();
-    socket.emit('room:create', { 
+  const onlineConfigured = socketReady;
+
+  const createRoom = () => {
+    if (!onlineConfigured) return setError('Online play is not configured yet. Deploy the API and set NEXT_PUBLIC_WS_URL in Vercel.');
+    if (!username.trim()) return setError('Choose a codename first.');
+    getSocket().emit('room:create', {
       username: username.trim(),
-      settings: {
-        imposterCount: settingsImposters,
-        imposterHintMode: settingsHintMode,
-        wordPackId: settingsPack,
-        clueOrder: settingsClueOrder,
-      }
+      settings: { imposterCount: 1, imposterHintMode: 'CATEGORY', wordPackId: 'pack-movies-cinema', clueOrder: 'SEQUENTIAL' },
     }, (res) => {
-      if (!res.success) {
-        setErrorMsg(res.error || 'Failed to create room');
-      }
+      if (!res.success) setError(res.error || 'Could not create room.');
     });
   };
 
-  const handleJoinRoom = () => {
-    if (!username.trim() || !roomCodeInput.trim()) {
-      setErrorMsg('Please enter both your name and room code');
-      return;
-    }
-    const socket = getSocket();
-    socket.emit('room:join', { roomCode: roomCodeInput.trim(), username: username.trim() }, (res) => {
-      if (!res.success) {
-        setErrorMsg(res.error || 'Failed to join room');
-      }
+  const joinRoom = () => {
+    if (!onlineConfigured) return setError('Online play is not configured yet.');
+    if (!username.trim() || !roomCode.trim()) return setError('Enter your codename and room code.');
+    getSocket().emit('room:join', { username: username.trim(), roomCode: roomCode.trim().toUpperCase() }, (res) => {
+      if (!res.success) setError(res.error || 'Could not join room.');
     });
   };
 
-  const handleStartGame = () => {
-    getSocket().emit('game:start');
-  };
-
-  const handleAddBot = (personality: 'balanced' | 'aggressive' | 'quiet' | 'analytical' | 'bluffer' = 'balanced') => {
-    getSocket().emit('player:add_bot', { personality });
-  };
-
-  const handleRemoveBot = (botId: string) => {
-    getSocket().emit('player:remove_bot', { botId });
-  };
-
-  const handleSubmitClue = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!clueInput.trim()) return;
-    getSocket().emit('game:clue_submit', { text: clueInput.trim() });
-    setClueInput('');
-  };
-
-  const handleSubmitVote = () => {
-    if (!selectedVoteId) return;
-    getSocket().emit('game:vote_submit', { targetPlayerId: selectedVoteId });
-  };
-
-  const handleSubmitImposterGuess = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!imposterGuessInput.trim()) return;
-    getSocket().emit('game:imposter_guess', { guessedWord: imposterGuessInput.trim() });
-    setImposterGuessInput('');
-  };
-
-  const handleRematch = () => {
-    getSocket().emit('game:rematch');
-  };
-
-  const handleSendChat = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-    getSocket().emit('chat:send', { text: chatInput.trim() });
-    setChatInput('');
-  };
-
-  // Local Pass & Play Controls
-  const startLocalGame = () => {
-    if (localPlayers.length < 3) {
-      setErrorMsg('At least 3 players required for Local Pass & Play.');
-      return;
+  const copyRoom = async () => {
+    if (!game) return;
+    try {
+      await navigator.clipboard.writeText(game.roomCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setError('Could not copy the room code. Select and copy it manually.');
     }
-    const randomImp = Math.floor(Math.random() * localPlayers.length);
-    setLocalImposterIndex(randomImp);
-    setLocalCurrentPlayerIndex(0);
-    setLocalCardRevealed(false);
-    setLocalGameRunning(true);
+  };
+
+  const startLocal = () => {
+    if (localPlayers.length < 3) return setError('Add at least 3 players.');
+    setLocalImposter(Math.floor(Math.random() * localPlayers.length));
+    setLocalWord(LOCAL_WORDS[Math.floor(Math.random() * LOCAL_WORDS.length)]);
+    setLocalTurn(0);
+    setLocalRevealed(false);
+    setLocalRunning(true);
+    setError('');
   };
 
   const addLocalPlayer = () => {
-    if (!newPlayerName.trim()) return;
-    setLocalPlayers([...localPlayers, newPlayerName.trim()]);
-    setNewPlayerName('');
+    const name = localName.trim();
+    if (!name) return;
+    if (localPlayers.some((p) => p.name.toLowerCase() === name.toLowerCase())) return setError('That player is already added.');
+    if (localPlayers.length >= 12) return setError('Maximum 12 players.');
+    setLocalPlayers((p) => [...p, { id: Date.now(), name }]);
+    setLocalName('');
+    setError('');
   };
 
-  // -------------------------------------------------------------
-  // VIEW: LANDING & ROOM SELECTION
-  // -------------------------------------------------------------
-  if (!gameState) {
-    return (
-      <div className="flex flex-col min-h-screen justify-between px-4 py-8 max-w-5xl mx-auto w-full">
-        {/* HEADER BRAND */}
-        <header className="flex items-center justify-between border-b border-white/10 pb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-red flex items-center justify-center font-display font-black text-xl text-white shadow-lg shadow-red-600/30">
-              D
-            </div>
-            <span className="text-2xl font-black font-display tracking-tight text-white">DECEIT</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-text-muted">
-            <span className="w-2 h-2 rounded-full bg-brand-bright animate-pulse" />
-            <span>Secret-Word Imposter Game</span>
-          </div>
-        </header>
+  const currentLocal = localPlayers[localTurn];
 
-        {/* HERO SECTION */}
-        <div className="my-auto py-8">
-          <div className="text-center max-w-2xl mx-auto mb-8">
-            <h1 className="text-5xl sm:text-7xl font-black font-display tracking-tight text-gradient-red mb-3">
-              WHO'S HIDING THE WORD?
-            </h1>
-            <p className="text-lg sm:text-xl text-text-muted font-light">
-              One secret word. One imposter. Everyone is watching.
-            </p>
-          </div>
-
-          {/* MAIN TABS */}
-          <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
-            <button
-              onClick={() => setActiveTab('PLAY')}
-              className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
-                activeTab === 'PLAY' ? 'bg-brand-red text-white shadow-lg shadow-red-600/30' : 'bg-surface text-text-muted hover:text-white border border-white/5'
-              }`}
-            >
-              Online Game
-            </button>
-            <button
-              onClick={() => setActiveTab('LOCAL')}
-              className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all flex items-center gap-1.5 ${
-                activeTab === 'LOCAL' ? 'bg-brand-red text-white shadow-lg shadow-red-600/30' : 'bg-surface text-text-muted hover:text-white border border-white/5'
-              }`}
-            >
-              <Smartphone className="w-4 h-4" /> Pass & Play (Local)
-            </button>
-            <button
-              onClick={() => setActiveTab('PRESETS')}
-              className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
-                activeTab === 'PRESETS' ? 'bg-brand-red text-white shadow-lg shadow-red-600/30' : 'bg-surface text-text-muted hover:text-white border border-white/5'
-              }`}
-            >
-              Presets
-            </button>
-            <button
-              onClick={() => setActiveTab('RULES')}
-              className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
-                activeTab === 'RULES' ? 'bg-brand-red text-white shadow-lg shadow-red-600/30' : 'bg-surface text-text-muted hover:text-white border border-white/5'
-              }`}
-            >
-              How It Works
-            </button>
-          </div>
-
-          {errorMsg && (
-            <div className="max-w-md mx-auto mb-4 px-4 py-2.5 bg-brand-dark border border-brand-red/60 text-red-300 text-xs rounded-xl flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-brand-bright flex-shrink-0" /> {errorMsg}
-            </div>
-          )}
-
-          {/* TAB 1: ONLINE PLAY */}
-          {activeTab === 'PLAY' && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-md mx-auto glass-panel p-6 rounded-2xl">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-1.5">
-                    Your Codename
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter your name..."
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full px-4 py-3 bg-card border border-white/10 rounded-xl text-white placeholder-neutral-600 focus:outline-none focus:border-brand-red font-medium text-sm"
-                  />
-                </div>
-
-                {/* Host Game Settings Accordion */}
-                <div className="p-3 bg-surface rounded-xl border border-white/5 space-y-3">
-                  <div className="flex items-center justify-between text-xs font-bold text-text-muted uppercase">
-                    <span>Host Quick Rules</span>
-                    <span className="text-[10px] text-brand-bright">Customizable</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-text-muted block mb-1">Imposters:</span>
-                      <select
-                        value={settingsImposters}
-                        onChange={(e) => setSettingsImposters(Number(e.target.value))}
-                        className="w-full px-2 py-1.5 bg-card border border-white/10 rounded-lg text-white font-medium"
-                      >
-                        <option value={1}>1 Imposter</option>
-                        <option value={2}>2 Imposters</option>
-                        <option value={3}>3 Imposters</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <span className="text-text-muted block mb-1">Imposter Hint:</span>
-                      <select
-                        value={settingsHintMode}
-                        onChange={(e) => setSettingsHintMode(e.target.value as any)}
-                        className="w-full px-2 py-1.5 bg-card border border-white/10 rounded-lg text-white font-medium"
-                      >
-                        <option value="NONE">No Hint</option>
-                        <option value="CATEGORY">Category Only</option>
-                        <option value="CATEGORY_AND_HINT">Category + Hint</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 pt-2">
-                  <button
-                    onClick={handleCreateRoom}
-                    className="w-full py-3.5 bg-brand-red hover:bg-brand-bright text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/30 flex items-center justify-center gap-2 transition-all transform active:scale-95"
-                  >
-                    <PlusCircle className="w-4 h-4" /> Create Room
-                  </button>
-
-                  <div className="relative flex py-1 items-center">
-                    <div className="flex-grow border-t border-white/10"></div>
-                    <span className="flex-shrink mx-3 text-[10px] uppercase font-bold text-text-muted tracking-widest">Or Join Code</span>
-                    <div className="flex-grow border-t border-white/10"></div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="ROOM CODE"
-                      maxLength={8}
-                      value={roomCodeInput}
-                      onChange={(e) => setRoomCodeInput(e.target.value.toUpperCase())}
-                      className="w-2/3 px-4 py-3 bg-card border border-white/10 rounded-xl text-white uppercase tracking-widest placeholder-neutral-600 focus:outline-none focus:border-brand-red font-mono font-bold text-center text-sm"
-                    />
-                    <button
-                      onClick={handleJoinRoom}
-                      className="w-1/3 py-3 bg-surface hover:bg-white/10 border border-white/10 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-1.5 transition-all"
-                    >
-                      <LogIn className="w-4 h-4" /> Join
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* TAB 2: LOCAL PASS & PLAY */}
-          {activeTab === 'LOCAL' && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="max-w-lg mx-auto glass-panel p-6 rounded-2xl">
-              {!localGameRunning ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                    <h3 className="font-bold text-white text-base flex items-center gap-2">
-                      <Smartphone className="w-4 h-4 text-brand-bright" /> Pass the Phone Setup
-                    </h3>
-                    <span className="text-xs text-text-muted">{localPlayers.length} Friends</span>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Add player name..."
-                      value={newPlayerName}
-                      onChange={(e) => setNewPlayerName(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-card border border-white/10 rounded-xl text-white text-sm"
-                    />
-                    <button
-                      onClick={addLocalPlayer}
-                      className="px-4 py-2 bg-surface hover:bg-white/10 border border-white/10 font-bold text-xs rounded-xl"
-                    >
-                      Add
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                    {localPlayers.map((name, i) => (
-                      <div key={i} className="p-2.5 bg-card rounded-lg border border-white/5 flex items-center justify-between text-xs">
-                        <span className="font-semibold text-white">{name}</span>
-                        <button
-                          onClick={() => setLocalPlayers(localPlayers.filter((_, idx) => idx !== i))}
-                          className="text-text-muted hover:text-red-400"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={startLocalGame}
-                    className="w-full py-3.5 bg-brand-red hover:bg-brand-bright text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/30 transition-all"
-                  >
-                    Start Local Match
-                  </button>
-                </div>
-              ) : (
-                /* Pass & Play Reveal Screen */
-                <div className="text-center py-4 space-y-6">
-                  <div className="text-xs font-bold text-text-muted uppercase tracking-widest">
-                    Player {localCurrentPlayerIndex + 1} of {localPlayers.length}
-                  </div>
-                  <h3 className="text-3xl font-black text-white">
-                    {localPlayers[localCurrentPlayerIndex]}
-                  </h3>
-
-                  {!localCardRevealed ? (
-                    <div className="py-8">
-                      <p className="text-xs text-text-muted mb-4">Pass device to {localPlayers[localCurrentPlayerIndex]} and tap below to reveal role.</p>
-                      <button
-                        onClick={() => setLocalCardRevealed(true)}
-                        className="px-8 py-4 bg-brand-red text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-red-600/40"
-                      >
-                        Tap to View Secret Word
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="glass-panel-red p-6 rounded-2xl max-w-sm mx-auto space-y-3">
-                      {localCurrentPlayerIndex === localImposterIndex ? (
-                        <>
-                          <span className="text-xs font-extrabold text-brand-bright uppercase tracking-widest">You are the</span>
-                          <h4 className="text-3xl font-black text-brand-bright">IMPOSTER</h4>
-                          <p className="text-xs text-text-muted">You do NOT know the secret word. Blend in with clever clues!</p>
-                          <p className="text-xs text-amber-300 font-bold mt-2">Category: {localWord.category}</p>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-xs font-extrabold text-text-muted uppercase tracking-widest">Your Secret Word</span>
-                          <h4 className="text-3xl font-black text-white font-mono tracking-wider">{localWord.word}</h4>
-                          <p className="text-xs text-text-muted">Category: {localWord.category}</p>
-                        </>
-                      )}
-
-                      <div className="pt-4 border-t border-white/10">
-                        <button
-                          onClick={() => {
-                            if (localCurrentPlayerIndex + 1 < localPlayers.length) {
-                              setLocalCurrentPlayerIndex(localCurrentPlayerIndex + 1);
-                              setLocalCardRevealed(false);
-                            } else {
-                              setLocalGameRunning(false);
-                            }
-                          }}
-                          className="w-full py-3 bg-white text-black font-extrabold text-xs rounded-xl"
-                        >
-                          {localCurrentPlayerIndex + 1 < localPlayers.length ? 'Hide & Pass to Next Player' : 'All Roles Seen! Start Clues'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* TAB 3: PRESETS */}
-          {activeTab === 'PRESETS' && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-2xl mx-auto grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {Object.values(APP_CONFIG.gamePresets).map((preset) => (
-                <div key={preset.id} className="glass-panel p-4 rounded-xl border border-white/5 space-y-1.5">
-                  <h4 className="font-bold text-sm text-white">{preset.name}</h4>
-                  <p className="text-xs text-text-muted">{preset.description}</p>
-                </div>
-              ))}
-            </motion.div>
-          )}
-
-          {/* TAB 4: HOW IT WORKS */}
-          {activeTab === 'RULES' && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-xl mx-auto glass-panel p-6 rounded-2xl text-xs space-y-3 text-text-muted leading-relaxed">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-2">The 30-Second Rulebook:</h3>
-              <p>1. <strong className="text-white">Secret Word:</strong> Civilians receive one secret word. The Imposter receives no word (only category info).</p>
-              <p>2. <strong className="text-white">Clue Phase:</strong> Everyone gives a short 1-word or 1-sentence clue proving they know the word without giving it away to the Imposter.</p>
-              <p>3. <strong className="text-white">Discuss & Vote:</strong> Scrutinize clues, debate suspicion, and vote to eliminate the Imposter.</p>
-              <p>4. <strong className="text-white">Imposter Steal:</strong> If caught, the Imposter gets one last guess at the secret word to steal the win!</p>
-            </motion.div>
-          )}
-        </div>
-
-        {/* FOOTER */}
-        <footer className="border-t border-white/10 pt-4 flex flex-col sm:flex-row items-center justify-between text-xs text-text-muted gap-2">
-          <span>© 2026 DECEIT</span>
-          <span className="font-semibold text-neutral-400">{APP_CONFIG.poweredBy}</span>
-        </footer>
-      </div>
-    );
-  }
-
-  // -------------------------------------------------------------
-  // VIEW: ONLINE ROOM & GAMEPLAY
-  // -------------------------------------------------------------
-  const mySecret = gameState.myInfo;
-  const isMyTurn = gameState.currentTurnPlayerId === gameState.players.find(p => p.name === username)?.id;
+  if (game) return <GameRoom game={game} username={username} connected={connected} error={error} setError={setError} copied={copied} copyRoom={copyRoom} clue={clue} setClue={setClue} guess={guess} setGuess={setGuess} chat={chat} setChat={setChat} messages={messages} vote={vote} setVote={setVote} />;
 
   return (
-    <div className="min-h-screen flex flex-col justify-between p-4 sm:p-6 max-w-5xl mx-auto w-full">
-      {/* HEADER */}
-      <header className="flex items-center justify-between glass-panel px-5 py-3 rounded-2xl mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded bg-brand-red flex items-center justify-center font-display font-black text-sm text-white">
-            D
-          </div>
-          <span className="text-lg font-black font-display text-white">DECEIT</span>
-          <div className="flex items-center gap-1.5 bg-card px-2.5 py-1 rounded-md border border-white/10 text-xs font-mono font-bold text-brand-bright">
-            {gameState.roomCode}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-xs uppercase px-2.5 py-1 bg-brand-dark border border-brand-red/40 text-red-300 rounded-full font-bold">
-            {gameState.phase.replace('_', ' ')}
-          </span>
-          {gameState.phaseDurationSeconds > 0 && gameState.phaseEndTime && (
-            <span className="font-mono text-xs px-2 py-1 bg-card rounded border border-white/10 text-amber-400 font-bold">
-              ⏱ {Math.max(0, Math.floor((gameState.phaseEndTime - Date.now()) / 1000))}s
-            </span>
-          )}
-        </div>
+    <main className="app-shell">
+      <header className="topbar">
+        <div className="brand"><span className="brand-mark">D</span><span>DECEIT</span></div>
+        <div className="status-pill"><span className={`status-dot ${onlineConfigured ? connected ? 'live' : 'idle' : 'offline'}`} />{onlineConfigured ? connected ? 'Online service connected' : 'Online service ready' : 'Online service not configured'}</div>
       </header>
 
-      {errorMsg && (
-        <div className="mb-4 px-4 py-2.5 bg-brand-dark border border-brand-red/60 text-red-300 text-xs rounded-xl flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 text-brand-bright flex-shrink-0" /> {errorMsg}
-        </div>
-      )}
-
-      {/* MAIN GAMEPLAY GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1">
-        {/* LEFT / CENTER INTERACTION AREA */}
-        <div className="lg:col-span-2 space-y-4 flex flex-col">
-          {/* LOBBY PHASE */}
-          {gameState.phase === 'LOBBY' && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel p-6 rounded-2xl flex-1 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Users className="w-4 h-4 text-brand-bright" /> Room Players ({gameState.players.length}/{gameState.settings.maxPlayers})
-                  </h3>
-                  <button
-                    onClick={() => handleAddBot('balanced')}
-                    className="px-3 py-1.5 bg-card hover:bg-white/10 text-xs font-bold rounded-lg border border-white/10 flex items-center gap-1.5"
-                  >
-                    <Bot className="w-3.5 h-3.5 text-neutral-400" /> + Add AI Player
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-4">
-                  {gameState.players.map((p) => (
-                    <div key={p.id} className="bg-card p-3 rounded-xl border border-white/5 flex items-center justify-between text-xs">
-                      <div className="truncate">
-                        <span className="font-bold text-white block truncate">{p.name} {p.isHost && '👑'}</span>
-                        <span className="text-[10px] text-text-muted">{p.isBot ? 'AI Bot' : 'Player'}</span>
-                      </div>
-                      {p.isBot && (
-                        <button onClick={() => handleRemoveBot(p.id)} className="text-neutral-500 hover:text-red-400 p-1">
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="border-t border-white/10 pt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <span className="text-xs text-text-muted">Min 3 players required to start.</span>
-                <button
-                  onClick={handleStartGame}
-                  disabled={gameState.players.length < 3}
-                  className="w-full sm:w-auto px-8 py-3 bg-brand-red hover:bg-brand-bright disabled:opacity-40 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2"
-                >
-                  <Play className="w-4 h-4 fill-current" /> Launch Match
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ROLE REVEAL PHASE */}
-          {gameState.phase === 'ROLE_REVEAL' && (
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="glass-panel-red p-8 rounded-2xl text-center space-y-4 flex-1 flex flex-col items-center justify-center">
-              <span className="text-xs uppercase font-extrabold tracking-widest text-text-muted">
-                Your Secret Role
-              </span>
-              <h3 className={`text-4xl sm:text-5xl font-black ${mySecret.role === 'IMPOSTER' ? 'text-brand-bright' : 'text-white'}`}>
-                {mySecret.role}
-              </h3>
-              <p className="text-xs text-text-muted max-w-md">
-                {mySecret.role === 'IMPOSTER'
-                  ? "You DO NOT know the secret word. Blend in with clever clues and deduce what everyone is talking about!"
-                  : "You know the secret word. Give subtle clues to identify other innocents without revealing the word."}
-              </p>
-
-              <div className="bg-card px-6 py-4 rounded-xl border border-white/10 mt-2 max-w-xs w-full">
-                {mySecret.secretWord ? (
-                  <>
-                    <span className="text-[10px] uppercase text-text-muted font-bold block mb-1">Secret Word:</span>
-                    <span className="text-2xl font-black text-white font-mono tracking-wider">{mySecret.secretWord}</span>
-                    <span className="text-[10px] text-text-muted block mt-1">Category: {mySecret.category}</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="text-[10px] uppercase text-brand-bright font-bold block mb-1">Category:</span>
-                    <span className="text-xl font-bold text-white">{mySecret.category || 'Unknown'}</span>
-                    {mySecret.hint && <span className="text-[11px] text-amber-300 block mt-1">Hint: {mySecret.hint}</span>}
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* CLUE PHASE & DISCUSSION */}
-          {(gameState.phase === 'CLUE_PHASE' || gameState.phase === 'DISCUSSION') && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel p-5 rounded-2xl flex-1 flex flex-col space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <div>
-                  <h3 className="text-sm font-bold text-white">
-                    {gameState.phase === 'CLUE_PHASE' ? `Clue Phase (Round ${gameState.currentRound})` : 'Open Discussion'}
-                  </h3>
-                  <p className="text-[11px] text-text-muted">
-                    {gameState.phase === 'CLUE_PHASE' ? 'Players take turns providing subtle clues.' : 'Analyze the clues and deduce who was bluffing!'}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-text-muted uppercase block">Category</span>
-                  <span className="text-xs font-bold text-white">{mySecret.category || 'General'}</span>
-                </div>
-              </div>
-
-              {/* Clues Feed */}
-              <div className="flex-1 space-y-2 overflow-y-auto max-h-[260px] pr-1">
-                {gameState.clues.length === 0 ? (
-                  <p className="text-xs text-neutral-600 italic text-center py-6">Awaiting first clue...</p>
-                ) : (
-                  gameState.clues.map((c) => (
-                    <div key={c.id} className="bg-card p-2.5 rounded-xl border border-white/5 text-xs">
-                      <span className="font-bold text-brand-bright mr-1.5">{c.playerName}:</span>
-                      <span className="text-white font-medium">"{c.text}"</span>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Clue Input Form */}
-              {gameState.phase === 'CLUE_PHASE' && (
-                <form onSubmit={handleSubmitClue} className="flex gap-2 pt-2 border-t border-white/10">
-                  <input
-                    type="text"
-                    placeholder="Enter your subtle clue..."
-                    value={clueInput}
-                    onChange={(e) => setClueInput(e.target.value)}
-                    maxLength={100}
-                    className="flex-1 px-3 py-2 bg-card border border-white/10 rounded-xl text-white text-xs placeholder-neutral-600 focus:outline-none focus:border-brand-red"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-brand-red hover:bg-brand-bright text-white font-bold text-xs rounded-xl shadow-md shadow-red-600/30 transition-all"
-                  >
-                    Submit Clue
-                  </button>
-                </form>
-              )}
-            </motion.div>
-          )}
-
-          {/* VOTING PHASE */}
-          {gameState.phase === 'VOTING' && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel p-6 rounded-2xl flex-1 flex flex-col space-y-4">
-              <div className="text-center">
-                <h3 className="text-2xl font-black text-brand-bright">WHO IS THE IMPOSTER?</h3>
-                <p className="text-xs text-text-muted mt-1">Select the player you suspect does not know the secret word.</p>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 flex-1">
-                {gameState.players
-                  .filter((p) => p.isAlive)
-                  .map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => setSelectedVoteId(p.id)}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        selectedVoteId === p.id
-                          ? 'bg-brand-dark border-brand-red ring-2 ring-brand-red/50'
-                          : 'bg-card border-white/5 hover:border-white/20'
-                      }`}
-                    >
-                      <span className="font-bold text-xs text-white block">{p.name}</span>
-                      <span className="text-[10px] text-text-muted">{p.isBot ? 'AI Player' : 'Player'}</span>
-                    </button>
-                  ))}
-              </div>
-
-              <div className="flex gap-2 pt-3 border-t border-white/10">
-                <button
-                  onClick={() => setSelectedVoteId('SKIP')}
-                  className={`px-4 py-2.5 rounded-xl border text-xs font-bold ${
-                    selectedVoteId === 'SKIP' ? 'bg-amber-950/60 border-amber-500 text-amber-300' : 'bg-surface border-white/10 text-text-muted'
-                  }`}
-                >
-                  Skip Vote
-                </button>
-                <button
-                  onClick={handleSubmitVote}
-                  disabled={!selectedVoteId}
-                  className="flex-1 py-2.5 bg-brand-red hover:bg-brand-bright disabled:opacity-40 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-red-600/30 transition-all"
-                >
-                  Confirm Vote
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* FINAL IMPOSTER GUESS */}
-          {gameState.phase === 'IMPOSTER_GUESS' && (
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="glass-panel-red p-8 rounded-2xl text-center space-y-4 flex-1 flex flex-col items-center justify-center">
-              <span className="text-xs uppercase font-extrabold tracking-widest text-brand-bright">
-                Final Deception Chance
-              </span>
-              <h3 className="text-3xl font-black text-white">IMPOSTER'S FINAL GUESS</h3>
-              <p className="text-xs text-text-muted max-w-sm">
-                The Imposter was caught! If they can guess the secret word right now, they steal victory!
-              </p>
-
-              {mySecret.role === 'IMPOSTER' ? (
-                <form onSubmit={handleSubmitImposterGuess} className="w-full max-w-xs space-y-2.5 mt-2">
-                  <input
-                    type="text"
-                    placeholder="Type secret word..."
-                    value={imposterGuessInput}
-                    onChange={(e) => setImposterGuessInput(e.target.value)}
-                    className="w-full px-4 py-3 bg-card border border-brand-red/50 rounded-xl text-white font-mono font-bold text-center uppercase tracking-wider text-sm"
-                  />
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-brand-red hover:bg-brand-bright text-white font-bold rounded-xl shadow-lg shadow-red-600/30 text-xs"
-                  >
-                    Submit Guess
-                  </button>
-                </form>
-              ) : (
-                <p className="text-xs text-neutral-500 animate-pulse pt-2">Awaiting Imposter's final guess...</p>
-              )}
-            </motion.div>
-          )}
-
-          {/* GAME RESULT */}
-          {gameState.phase === 'GAME_RESULT' && (
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="glass-panel p-8 rounded-2xl text-center space-y-4 flex-1 flex flex-col items-center justify-center">
-              <h3 className={`text-3xl font-black ${gameState.winnerTeam === 'IMPOSTER' ? 'text-brand-bright' : 'text-white'}`}>
-                {gameState.winnerTeam} TEAM WINS!
-              </h3>
-              <p className="text-xs text-text-muted max-w-md">{gameState.winReason}</p>
-
-              {gameState.secretWordRevealed && (
-                <div className="bg-card px-6 py-3 rounded-xl border border-white/10">
-                  <span className="text-[10px] text-text-muted uppercase font-bold block">The Secret Word Was:</span>
-                  <span className="text-2xl font-black text-white font-mono tracking-widest">{gameState.secretWordRevealed}</span>
-                </div>
-              )}
-
-              <button
-                onClick={handleRematch}
-                className="px-6 py-3 bg-brand-red hover:bg-brand-bright text-white font-bold text-xs rounded-xl shadow-lg shadow-red-600/30 flex items-center gap-1.5 transition-all mt-2"
-              >
-                <RotateCcw className="w-4 h-4" /> Rematch
-              </button>
-            </motion.div>
-          )}
+      <section className="hero">
+        <div className="hero-copy">
+          <div className="eyebrow"><Zap size={14} /> SOCIAL DEDUCTION • REAL-TIME</div>
+          <h1>Trust no one.<br /><span>Find the imposter.</span></h1>
+          <p>A sharp, fast party game where one player is bluffing — and everyone else knows the word.</p>
         </div>
 
-        {/* RIGHT COLUMN: SECRET INTEL & ROOM COMMS */}
-        <div className="space-y-4 flex flex-col">
-          {/* Private Intel */}
-          <div className="glass-panel p-4 rounded-2xl">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs uppercase font-bold text-text-muted flex items-center gap-1.5">
-                <Eye className="w-3.5 h-3.5 text-brand-bright" /> Private Intel
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-card font-mono text-white font-bold">
-                {mySecret.role}
-              </span>
-            </div>
-            {mySecret.secretWord ? (
-              <div>
-                <span className="text-[10px] text-text-muted uppercase block">Secret Word:</span>
-                <span className="text-base font-black text-white font-mono">{mySecret.secretWord}</span>
-              </div>
-            ) : (
-              <div>
-                <span className="text-[10px] text-brand-bright uppercase block">Category:</span>
-                <span className="text-xs font-bold text-white">{mySecret.category || 'General'}</span>
-              </div>
+        <div className="play-card">
+          <nav className="mode-tabs" aria-label="Game mode">
+            {tabs.map((item) => { const Icon = item.icon; return <button key={item.id} onClick={() => { setTab(item.id); setError(''); }} className={tab === item.id ? 'active' : ''}><Icon size={16} />{item.label}</button>; })}
+          </nav>
+
+          <AnimatePresence mode="wait">
+            {tab === 'ONLINE' && (
+              <motion.div key="online" className="panel-body" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+                <div className="panel-heading"><div><div className="kicker">ONLINE MATCH</div><h2>Enter the game</h2></div><div className="mini-icon"><Gamepad2 size={18} /></div></div>
+                {!onlineConfigured && <div className="notice warning"><ShieldAlert size={16} /><span>Frontend is live, but the multiplayer server is not connected. Local Pass & Play works without it.</span></div>}
+                {error && <div className="notice error"><ShieldAlert size={16} /><span>{error}</span></div>}
+                <label className="field-label">CODENAME<input value={username} onChange={(e) => setUsername(e.target.value.slice(0, 20))} placeholder="e.g. NightOwl" maxLength={20} autoComplete="nickname" /></label>
+                <button className="primary-btn" onClick={createRoom} disabled={!onlineConfigured}><Plus size={18} /> Create a room <ArrowRight size={17} /></button>
+                <div className="divider"><span>OR JOIN A ROOM</span></div>
+                <div className="join-row"><input value={roomCode} onChange={(e) => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))} placeholder="ROOM CODE" /><button className="secondary-btn" onClick={joinRoom} disabled={!onlineConfigured}><LogIn size={17} /> Join</button></div>
+                <div className="feature-row"><span><Users size={14} /> 3–24 players</span><span><Zap size={14} /> Live rounds</span><span><ShieldAlert size={14} /> Secret roles</span></div>
+              </motion.div>
             )}
-          </div>
 
-          {/* Live Room Comms */}
-          <div className="glass-panel p-4 rounded-2xl flex-1 flex flex-col justify-between">
-            <div className="flex items-center gap-2 border-b border-white/10 pb-2 mb-2">
-              <MessageSquare className="w-3.5 h-3.5 text-brand-bright" />
-              <span className="text-xs font-bold text-white uppercase tracking-wider">Room Comms</span>
-            </div>
+            {tab === 'LOCAL' && (
+              <motion.div key="local" className="panel-body" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+                {!localRunning ? <>
+                  <div className="panel-heading"><div><div className="kicker">PASS & PLAY</div><h2>One phone. Everyone plays.</h2></div><div className="mini-icon"><Smartphone size={18} /></div></div>
+                  {error && <div className="notice error"><ShieldAlert size={16} /><span>{error}</span></div>}
+                  <div className="add-player"><input value={localName} onChange={(e) => setLocalName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addLocalPlayer()} placeholder="Player name" maxLength={20} /><button className="secondary-btn square" onClick={addLocalPlayer}><Plus size={18} /></button></div>
+                  <div className="player-list">{localPlayers.map((p, i) => <div className="player-chip" key={p.id}><span className="avatar">{p.name.slice(0, 1).toUpperCase()}</span><span>{p.name}</span>{i === 0 && <Crown size={13} className="muted-icon" />}<button onClick={() => setLocalPlayers((all) => all.filter((x) => x.id !== p.id))} aria-label={`Remove ${p.name}`}><X size={14} /></button></div>)}</div>
+                  <button className="primary-btn" onClick={startLocal}><Sparkles size={18} /> Start local match <ArrowRight size={17} /></button>
+                </> : <LocalReveal player={currentLocal} index={localTurn} total={localPlayers.length} revealed={localRevealed} isImposter={localTurn === localImposter} word={localWord.word} category={localWord.category} onReveal={() => setLocalRevealed(true)} onNext={() => { if (localTurn + 1 < localPlayers.length) { setLocalTurn((n) => n + 1); setLocalRevealed(false); } else { setLocalRunning(false); setLocalRevealed(false); } }} />}
+              </motion.div>
+            )}
 
-            <div className="space-y-1.5 flex-1 overflow-y-auto max-h-[260px] text-xs pr-1">
-              {chatMessages.length === 0 ? (
-                <p className="text-neutral-600 italic text-center py-6">No comms yet.</p>
-              ) : (
-                chatMessages.map((msg) => (
-                  <div key={msg.id} className="bg-card p-2 rounded-lg border border-white/5">
-                    <span className="font-bold text-neutral-300 mr-1">{msg.senderName}:</span>
-                    <span className="text-neutral-200">{msg.text}</span>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <form onSubmit={handleSendChat} className="flex gap-2 pt-2 border-t border-white/10">
-              <input
-                type="text"
-                placeholder="Say something..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                className="flex-1 px-2.5 py-1.5 bg-card border border-white/10 rounded-lg text-white text-xs placeholder-neutral-600 focus:outline-none focus:border-brand-red"
-              />
-              <button type="submit" className="p-2 bg-brand-red hover:bg-brand-bright text-white rounded-lg">
-                <Send className="w-3 h-3" />
-              </button>
-            </form>
-          </div>
+            {tab === 'RULES' && <motion.div key="rules" className="panel-body rules" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}><div className="kicker">THE QUICK RULEBOOK</div><h2>Four moves. One liar.</h2>{[['01','Reveal','Everyone secretly gets the word — except the Imposter.'],['02','Clue','Give a subtle clue without making the word obvious.'],['03','Discuss & vote','Read the room. Spot the player whose clue feels wrong.'],['04','Final guess','If caught, the Imposter gets one last chance to steal the win.']].map(([n,t,d]) => <div className="rule" key={n}><span>{n}</span><div><strong>{t}</strong><p>{d}</p></div></div>)}</motion.div>}
+          </AnimatePresence>
         </div>
-      </div>
+      </section>
 
-      {/* FOOTER */}
-      <footer className="border-t border-white/10 pt-3 mt-4 flex items-center justify-between text-xs text-text-muted">
-        <span>© 2026 DECEIT</span>
-        <span className="font-semibold text-neutral-400">{APP_CONFIG.poweredBy}</span>
-      </footer>
-    </div>
+      <footer className="footer"><span>© 2026 DECEIT</span><span>{APP_CONFIG.poweredBy}</span></footer>
+    </main>
   );
+}
+
+function LocalReveal({ player, index, total, revealed, isImposter, word, category, onReveal, onNext }: { player: LocalPlayer; index: number; total: number; revealed: boolean; isImposter: boolean; word: string; category: string; onReveal: () => void; onNext: () => void }) {
+  return <div className="reveal-screen"><div className="progress-label">PLAYER {index + 1} OF {total}</div><h2>{player.name}</h2>{!revealed ? <><p>Pass the phone to <b>{player.name}</b>. Make sure nobody else is looking.</p><button className="primary-btn" onClick={onReveal}><Eye size={18} /> Reveal my role</button></> : <div className={`secret-card ${isImposter ? 'imposter' : ''}`}><div className="secret-badge">{isImposter ? 'YOU ARE THE' : 'YOUR SECRET WORD'}</div><strong>{isImposter ? 'IMPOSTER' : word}</strong><p>{isImposter ? `Blend in. You do not know the word. Category: ${category}` : `Category: ${category}`}</p><button className="secondary-btn" onClick={onNext}><Check size={17} /> {index + 1 === total ? 'Finish reveal' : 'Hide & pass on'}</button></div>}</div>;
+}
+
+function GameRoom(props: { game: ClientGameState; username: string; connected: boolean; error: string; setError: (s: string) => void; copied: boolean; copyRoom: () => void; clue: string; setClue: (s: string) => void; guess: string; setGuess: (s: string) => void; chat: string; setChat: (s: string) => void; messages: Array<{ id: string; senderName: string; text: string }>; vote: string | null; setVote: (s: string | null) => void }) {
+  const { game, username, connected, error, setError, copied, copyRoom, clue, setClue, guess, setGuess, chat, setChat, messages, vote, setVote } = props;
+  const socket = getSocket();
+  const [now, setNow] = useState(Date.now());
+  const me = game.players.find((p) => p.name === username);
+  const isTurn = game.currentTurnPlayerId === me?.id;
+  const seconds = game.phaseEndTime ? Math.max(0, Math.ceil((game.phaseEndTime - now) / 1000)) : null;
+
+  useEffect(() => {
+    if (!game.phaseEndTime) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [game.phaseEndTime]);
+
+  const phaseLabel = game.phase.replaceAll('_', ' ');
+  const submitClue = (e: React.FormEvent) => { e.preventDefault(); if (!clue.trim()) return; socket.emit('game:clue_submit', { text: clue.trim() }); setClue(''); };
+  const submitVote = () => { if (!vote) return; socket.emit('game:vote_submit', { targetPlayerId: vote }); };
+  const submitGuess = (e: React.FormEvent) => { e.preventDefault(); if (!guess.trim()) return; socket.emit('game:imposter_guess', { guessedWord: guess.trim() }); setGuess(''); };
+  const submitChat = (e: React.FormEvent) => { e.preventDefault(); if (!chat.trim()) return; socket.emit('chat:send', { text: chat.trim() }); setChat(''); };
+
+  return <main className="room-shell">
+    <header className="room-topbar"><div className="brand"><span className="brand-mark">D</span><span>DECEIT</span></div><div className="room-center"><span className="room-code">ROOM {game.roomCode}<button onClick={copyRoom} title="Copy room code">{copied ? <Check size={14} /> : <Copy size={14} />}</button></span><span className="phase-pill">{phaseLabel}</span>{seconds !== null && <span className="timer-pill">{seconds}s</span>}</div><div className={`connection ${connected ? 'ok' : ''}`}>{connected ? <Wifi size={15} /> : <WifiOff size={15} />}{connected ? 'Connected' : 'Reconnecting'}</div></header>
+    {error && <div className="notice error room-notice"><ShieldAlert size={16} /><span>{error}</span><button onClick={() => setError('')}><X size={15} /></button></div>}
+    <section className="room-grid">
+      <div className="main-panel">
+        {game.phase === 'LOBBY' && <div className="stage"><div className="stage-head"><div><div className="kicker">ROOM LOBBY</div><h1>Build your crew.</h1><p>Share the room code, add an AI, then launch when at least three players are ready.</p></div><button className="secondary-btn" onClick={() => socket.emit('player:add_bot', { personality: 'balanced' })}><Bot size={17} /> Add AI</button></div><div className="crew-grid">{game.players.map((p) => <div className="crew-card" key={p.id}><span className="avatar">{p.name.slice(0,1).toUpperCase()}</span><div><strong>{p.name}</strong><small>{p.isBot ? 'AI player' : p.isHost ? 'Host' : 'Player'} {p.isConnected ? '• online' : '• offline'}</small></div>{p.isHost && <Crown size={15} className="gold" />}</div>)}</div><button className="primary-btn launch" disabled={game.players.length < 3} onClick={() => socket.emit('game:start')}><Gamepad2 size={18} /> Launch match</button></div>}
+        {game.phase === 'ROLE_REVEAL' && <div className="stage centered"><div className="eyebrow"><Eye size={14} /> PRIVATE ROLE</div><h1>You are <span className={game.myInfo.role === 'IMPOSTER' ? 'danger-text' : ''}>{game.myInfo.role}</span>.</h1><p>{game.myInfo.role === 'IMPOSTER' ? 'Blend in, read the clues, and survive the vote.' : 'Protect the word. Give clues that prove you know it without exposing it.'}</p><div className="intel-card">{game.myInfo.secretWord ? <><small>SECRET WORD</small><strong>{game.myInfo.secretWord}</strong><span>{game.myInfo.category}</span></> : <><small>CATEGORY</small><strong>{game.myInfo.category || 'Unknown'}</strong>{game.myInfo.hint && <span>Hint: {game.myInfo.hint}</span>}</>}</div></div>}
+        {(game.phase === 'CLUE_PHASE' || game.phase === 'DISCUSSION') && <div className="stage"><div className="stage-head"><div><div className="kicker">ROUND {game.currentRound} • {phaseLabel}</div><h1>{game.phase === 'CLUE_PHASE' ? 'Leave your clue.' : 'Read the room.'}</h1><p>{isTurn ? 'It is your turn.' : 'Watch what everyone says. Someone is bluffing.'}</p></div><div className="round-chip">{game.clues.length} clues</div></div><div className="clue-feed">{game.clues.length ? game.clues.map((c) => <div className="clue" key={c.id}><span className="avatar small">{c.playerName.slice(0,1).toUpperCase()}</span><div><strong>{c.playerName}</strong><p>{c.text}</p></div></div>) : <div className="empty-state"><MessageCircle size={22} /><span>No clues yet. Be the first.</span></div>}</div>{game.phase === 'CLUE_PHASE' && <form className="composer" onSubmit={submitClue}><input value={clue} onChange={(e) => setClue(e.target.value)} placeholder={isTurn ? 'Your subtle clue…' : 'Wait for your turn…'} disabled={!isTurn} maxLength={100} /><button disabled={!isTurn}><Send size={17} /></button></form>}</div>}
+        {game.phase === 'VOTING' && <div className="stage"><div className="centered"><div className="eyebrow"><ShieldAlert size={14} /> FINAL CALL</div><h1>Who is the imposter?</h1><p>Choose carefully. Your vote can end the round.</p></div><div className="vote-grid">{game.players.filter((p) => p.isAlive).map((p) => <button key={p.id} className={`vote-card ${vote === p.id ? 'selected' : ''}`} onClick={() => setVote(p.id)}><span className="avatar">{p.name.slice(0,1).toUpperCase()}</span><strong>{p.name}</strong><small>{p.isBot ? 'AI player' : 'Player'}</small></button>)}</div><button className="primary-btn" disabled={!vote} onClick={submitVote}><ShieldAlert size={18} /> Confirm vote</button></div>}
+        {game.phase === 'IMPOSTER_GUESS' && <div className="stage centered"><div className="eyebrow danger"><ShieldAlert size={14} /> LAST CHANCE</div><h1>Steal the win.</h1><p>The Imposter has been caught. Guess the secret word correctly to turn the game around.</p>{game.myInfo.role === 'IMPOSTER' ? <form className="guess-form" onSubmit={submitGuess}><input value={guess} onChange={(e) => setGuess(e.target.value)} placeholder="Secret word" /><button className="primary-btn">Submit guess <ArrowRight size={17} /></button></form> : <div className="waiting"><RefreshCw size={17} /> Waiting for the Imposter…</div>}</div>}
+        {(game.phase === 'GAME_RESULT' || game.phase === 'ROUND_RESULT') && <div className="stage centered"><div className="eyebrow"><Sparkles size={14} /> RESULT</div><h1>{game.winnerTeam ? `${game.winnerTeam} wins.` : 'Round complete.'}</h1><p>{game.winReason || 'Get ready for the next round.'}</p>{game.secretWordRevealed && <div className="intel-card"><small>SECRET WORD</small><strong>{game.secretWordRevealed}</strong></div>}{game.phase === 'GAME_RESULT' && <button className="primary-btn" onClick={() => socket.emit('game:rematch')}><RefreshCw size={18} /> Rematch</button>}</div>}
+      </div>
+      <aside className="side-panel"><div className="side-card"><div className="side-title"><Users size={16} /> Players <span>{game.players.length}/{game.settings.maxPlayers}</span></div><div className="side-players">{game.players.map((p) => <div className="side-player" key={p.id}><span className={`presence ${p.isConnected ? 'on' : ''}`} /><span>{p.name}</span>{p.isHost && <Crown size={12} className="gold" />}</div>)}</div></div><div className="side-card intel-side"><div className="side-title"><Eye size={16} /> {game.phase === 'LOBBY' ? 'Match status' : 'Your intel'}</div>{game.phase === 'LOBBY' ? <><small>ROOM STATE</small><strong>Waiting to start</strong><span>Roles are assigned when the host launches the match.</span></> : <><small>{game.myInfo.role === 'IMPOSTER' ? 'ROLE' : 'SECRET WORD'}</small><strong>{game.myInfo.secretWord || game.myInfo.role}</strong><span>{game.myInfo.category}</span></>}</div><div className="side-card chat-card"><div className="side-title"><MessageCircle size={16} /> Room chat</div><div className="chat-list">{messages.length ? messages.map((m) => <div className="chat-message" key={m.id}><strong>{m.senderName}</strong><p>{m.text}</p></div>) : <div className="empty-state"><MessageCircle size={18} /> No messages yet.</div>}</div><form className="composer" onSubmit={submitChat}><input value={chat} onChange={(e) => setChat(e.target.value)} placeholder="Message the room…" maxLength={200} /><button><Send size={16} /></button></form></div></aside>
+    </section>
+  </main>;
 }
