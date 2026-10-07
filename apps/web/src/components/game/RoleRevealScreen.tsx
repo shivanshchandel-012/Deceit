@@ -24,34 +24,6 @@ export function RoleRevealScreen({ gameState }: RoleRevealScreenProps) {
     <div
       className="flex flex-col items-center justify-center min-h-full px-6 py-8 relative overflow-hidden"
     >
-      {/* Ambient background */}
-      <AnimatePresence>
-        {isImposter && (
-          <motion.div
-            key="red-bg"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8, duration: 1.2 }}
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background: 'radial-gradient(ellipse 80% 70% at 50% 50%, rgba(229,9,20,0.15) 0%, transparent 70%)',
-            }}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Scan line effect */}
-      <motion.div
-        initial={{ y: '-100%' }}
-        animate={{ y: '100vh' }}
-        transition={{ duration: 0.8, ease: 'linear' }}
-        className="absolute inset-x-0 h-[2px] pointer-events-none z-10"
-        style={{
-          background: 'linear-gradient(90deg, transparent, rgba(229,9,20,0.6), transparent)',
-          boxShadow: '0 0 12px rgba(229,9,20,0.8)',
-        }}
-      />
-
       {/* Role Label */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -82,23 +54,10 @@ export function RoleRevealScreen({ gameState }: RoleRevealScreenProps) {
                   : 'linear-gradient(145deg, rgba(18,18,18,0.98), rgba(12,12,12,0.98))',
                 border: `1px solid ${isImposter ? 'rgba(229,9,20,0.5)' : 'rgba(255,255,255,0.1)'}`,
                 boxShadow: isImposter
-                  ? '0 0 60px rgba(229,9,20,0.25), inset 0 1px 0 rgba(255,255,255,0.05)'
-                  : '0 0 40px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+                  ? '0 24px 60px rgba(229,9,20,0.14), inset 0 1px 0 rgba(255,255,255,0.05)'
+                  : '0 24px 60px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)',
               }}
             >
-              {/* Corner decoration */}
-              <div
-                className="absolute top-0 left-0 w-16 h-16 opacity-20"
-                style={{
-                  background: `radial-gradient(circle at top left, ${isImposter ? '#E50914' : 'white'}, transparent)`,
-                }}
-              />
-              <div
-                className="absolute bottom-0 right-0 w-20 h-20 opacity-10"
-                style={{
-                  background: `radial-gradient(circle at bottom right, ${isImposter ? '#E50914' : 'white'}, transparent)`,
-                }}
-              />
 
               {/* Role badge */}
               <motion.div
