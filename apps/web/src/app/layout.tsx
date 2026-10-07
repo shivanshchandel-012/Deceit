@@ -1,20 +1,21 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, Outfit } from 'next/font/google';
+import { Cormorant_Garamond, Manrope } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import { APP_CONFIG } from '@deceit/config';
 import { ServiceWorkerRegistration } from '@/components/ServiceWorkerRegistration';
 
-const inter = Inter({ 
-  subsets: ['latin'], 
-  variable: '--font-inter',
+const manrope = Manrope({
+  subsets: ['latin'],
+  variable: '--font-manrope',
   display: 'swap',
+  weight: ['400', '500', '600', '700', '800'],
 });
-const outfit = Outfit({ 
-  subsets: ['latin'], 
-  variable: '--font-outfit',
+const display = Cormorant_Garamond({
+  subsets: ['latin'],
+  variable: '--font-display',
   display: 'swap',
-  weight: ['400', '600', '700', '800', '900'],
+  weight: ['400', '500', '600', '700'],
 });
 
 export const viewport: Viewport = {
@@ -53,28 +54,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${outfit.variable} dark`}>
+    <html lang="en" className={`${manrope.variable} ${display.variable} dark`}>
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className="bg-[#050505] text-white font-sans antialiased overflow-x-hidden">
-        {/* Ambient red glow at top */}
-        <div 
-          className="fixed inset-x-0 top-0 h-[500px] pointer-events-none z-0"
-          style={{
-            background: 'radial-gradient(ellipse 70% 50% at 50% -5%, rgba(229,9,20,0.14) 0%, transparent 70%)',
-          }}
-        />
-        {/* Noise texture overlay */}
-        <div 
-          className="fixed inset-0 pointer-events-none z-0 opacity-[0.025]"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-            backgroundSize: '256px 256px',
-          }}
-        />
         <main className="relative z-10 min-h-dvh flex flex-col">
           {children}
         </main>
