@@ -10,13 +10,19 @@ export function getSocketUrl(): string {
 export function getSocket(): Socket<ServerToClientEvents, ClientToServerEvents> {
   if (!socket) {
     const wsUrl = getSocketUrl();
-    socket = io(wsUrl || undefined, {
-      autoConnect: Boolean(wsUrl),
+    if (!wsUrl) {
+      throw new Error(
+        'NEXT_PUBLIC_WS_URL is not configured. Please set it in Vercel environment variables.'
+      );
+    }
+
+    socket = io(wsUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      timeout: 8000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000,
     });
   }
   return socket;
